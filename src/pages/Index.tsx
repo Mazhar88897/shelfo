@@ -6,8 +6,9 @@ import { BookWithDetails } from "@/types";
 import Welcome from "./Welcome";
 import Home from "./Home";
 import LibraryPage from "./LibraryPage";
+import CollectionPage from "./Collection";
 
-type Page = "welcome" | "home" | "library";
+type Page = "welcome" | "home" | "library" | "collection";
 
 const Index = () => {
   const {
@@ -80,6 +81,7 @@ const Index = () => {
           books={allBooks}
           stats={stats}
           onNavigateToLibrary={() => setCurrentPage("library")}
+          onNavigateToCollections={() => setCurrentPage("collection")}
           onAddBook={() => setIsAddBookOpen(true)}
           onBookClick={handleBookClick}
         />
@@ -95,6 +97,12 @@ const Index = () => {
           onAddBook={() => setIsAddBookOpen(true)}
           onBookClick={handleBookClick}
           refreshTrigger={libraryRefreshTrigger}
+        />
+      )}
+
+      {currentPage === "collection" && (
+        <CollectionPage
+          onBack={() => setCurrentPage("home")}
         />
       )}
 

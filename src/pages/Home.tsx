@@ -3,7 +3,7 @@ import { BookWithDetails } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Book, BookOpen, CheckCircle2, Library } from "lucide-react";
+import { Book, BookMarked, BookOpen, CheckCircle2, Library } from "lucide-react";
 
 interface HomeProps {
   books: BookWithDetails[];
@@ -16,6 +16,7 @@ interface HomeProps {
     reviewsCount: number;
   };
   onNavigateToLibrary: () => void;
+  onNavigateToCollections: () => void;
   onAddBook: () => void;
   onBookClick: (book: BookWithDetails) => void;
 }
@@ -68,7 +69,7 @@ interface PagesReadResponse {
   timestamp: string;
 }
 
-const Home = ({ books, stats, onNavigateToLibrary, onAddBook, onBookClick }: HomeProps) => {
+const Home = ({ books, stats, onNavigateToLibrary, onNavigateToCollections, onAddBook, onBookClick }: HomeProps) => {
   const [latestBook, setLatestBook] = useState<LatestBookResponse["data"]>(null);
   const [recentBooks, setRecentBooks] = useState<RecentBooksResponse["data"]>([]);
   const [totalBooksCount, setTotalBooksCount] = useState<number | null>(null);
@@ -146,7 +147,6 @@ const Home = ({ books, stats, onNavigateToLibrary, onAddBook, onBookClick }: Hom
   }, []);
 
   return (
-
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
@@ -158,12 +158,14 @@ const Home = ({ books, stats, onNavigateToLibrary, onAddBook, onBookClick }: Hom
                 <Library className="w-4 h-4 mr-2" />
                 Library
               </Button>
-              
+              <Button variant="outline" onClick={onNavigateToCollections}>
+                <BookMarked className="w-4 h-4 mr-2" />
+                Collection
+              </Button> 
             </div>
           </div>
         </div>
       </header>
-
       <main className="container mx-auto px-4 py-8 space-y-8">
         {/* Currently Reading & Recently Added */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

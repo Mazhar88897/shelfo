@@ -10,9 +10,21 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { StarRating } from "@/components/StarRating";
-import { Book, Search, Plus, ArrowLeft, Library, BookOpen, BookMarked, Star } from "lucide-react";
+import { Book, Search, Plus, ArrowLeft, Library, BookOpen, BookMarked, Star, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LibraryPageProps {
@@ -39,6 +51,7 @@ interface ApiBook {
   pagesRead: number;
   publisher: string;
   coverUrl?: string;
+  reviews?: Array<{ rating: number; comment?: string }>;
 }
 
 interface BooksResponse {
@@ -65,6 +78,12 @@ const LibraryPage = ({
   const [selectedBook, setSelectedBook] = useState<ApiBook | null>(null);
   const [pagesRead, setPagesRead] = useState<number>(0);
   const [rating, setRating] = useState<number>(0);
+  const [isAddToCollectionOpen, setIsAddToCollectionOpen] = useState(false);
+  const [bookToAdd, setBookToAdd] = useState<ApiBook | null>(null);
+  const [availableCollections, setAvailableCollections] = useState<Array<{ id: number; name: string }>>([]);
+  const [selectedCollectionId, setSelectedCollectionId] = useState<number | null>(null);
+  const [bookToDelete, setBookToDelete] = useState<ApiBook | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   // Extract unique categories from API books
   const apiCategories = useMemo(() => {
@@ -92,10 +111,37 @@ const LibraryPage = ({
     return null;
   }, []);
 
+  // Fetch collections function
+  const fetchCollections = useCallback(async () => {
+    try {
+      const baseURL = import.meta.env.VITE_API_BASE_URL || "";
+      const apiUrl = baseURL ? `${baseURL}/api/collections` : "/api/collections";
+      const response = await fetch(apiUrl);
+      if (response.ok) {
+        const result = await response.json();
+        if (result.success && result.data) {
+          setAvailableCollections(result.data.map((col: { id: number; name: string }) => ({
+            id: col.id,
+            name: col.name,
+          })));
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching collections:", error);
+    }
+  }, []);
+
   // Fetch books on mount and when refreshTrigger changes
   useEffect(() => {
     fetchBooks();
   }, [fetchBooks, refreshTrigger]);
+
+  // Fetch collections when add to collection modal opens
+  useEffect(() => {
+    if (isAddToCollectionOpen) {
+      fetchCollections();
+    }
+  }, [isAddToCollectionOpen, fetchCollections]);
 
   const filteredApiBooks = useMemo(() => {
     if (apiBooks.length === 0) return [];
@@ -125,6 +171,75 @@ const LibraryPage = ({
     setActiveFilter(filter);
     setSelectedStatus(null);
     setSelectedCategory(null);
+  };
+
+  const handleAddToCollection = async () => {
+    if (!bookToAdd || !selectedCollectionId) return;
+
+    try {
+      const baseURL = import.meta.env.VITE_API_BASE_URL || "";
+      const apiUrl = baseURL
+        ? `${baseURL}/api/collections/${selectedCollectionId}/books/${bookToAdd.id}`
+        : `/api/collections/${selectedCollectionId}/books/${bookToAdd.id}`;
+      
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        setIsAddToCollectionOpen(false);
+        setBookToAdd(null);
+        setSelectedCollectionId(null);
+        // Optionally show a success message or refresh data
+      }
+    } catch (error) {
+      console.error("Error adding book to collection:", error);
+    }
+  };
+
+  const handleOpenAddToCollection = (book: ApiBook) => {
+    setBookToAdd(book);
+    setIsAddToCollectionOpen(true);
+    setSelectedCollectionId(null);
+  };
+
+  const handleDeleteBook = async () => {
+    if (!bookToDelete) return;
+
+    try {
+      const baseURL = import.meta.env.VITE_API_BASE_URL || "";
+      const apiUrl = baseURL
+        ? `${baseURL}/api/books/${bookToDelete.id}`
+        : `/api/books/${bookToDelete.id}`;
+      
+      const response = await fetch(apiUrl, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        // Close delete dialog
+        setIsDeleteDialogOpen(false);
+        setBookToDelete(null);
+        
+        // Close book details modal if it's open for the deleted book
+        if (selectedBook?.id === bookToDelete.id) {
+          setSelectedBook(null);
+        }
+        
+        // Refresh books list
+        await fetchBooks();
+      }
+    } catch (error) {
+      console.error("Error deleting book:", error);
+    }
+  };
+
+  const handleOpenDeleteDialog = (book: ApiBook) => {
+    setBookToDelete(book);
+    setIsDeleteDialogOpen(true);
   };
 
   const statusIcons = {
@@ -258,51 +373,89 @@ const LibraryPage = ({
               return (
                 <div
                   key={apiBook.id}
-                  onClick={() => {
-                    setSelectedBook(apiBook);
-                    setPagesRead(apiBook.pagesRead || 0);
-                    setRating(0); // Reset rating when opening modal
-                  }}
                   className={cn(
-                    "flex gap-4 p-4 rounded-lg bg-card border border-border",
-                    "cursor-pointer hover:bg-secondary/50 transition-colors"
+                    "relative flex sm:flex-row flex-col gap-4 p-4 rounded-lg bg-card border border-border",
+                    "hover:bg-secondary/50 transition-colors"
                   )}
                 >
-                  {/* Cover */}
-                  {apiBook.coverUrl ? (
-                    <img
-                      src={apiBook.coverUrl}
-                      alt={apiBook.title}
-                      className="w-16 h-24 object-cover rounded-md flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-24 bg-muted rounded-md flex items-center justify-center flex-shrink-0">
-                      <Book className="w-8 h-8 text-muted-foreground" />
-                    </div>
-                  )}
+                  <div
+                    onClick={() => {
+                      setSelectedBook(apiBook);
+                      setPagesRead(apiBook.pagesRead || 0);
+                      setRating(0); // Reset rating when opening modal
+                    }}
+                    className="flex gap-4 flex-1 cursor-pointer"
+                  >
+                    {/* Cover */}
+                    {apiBook.coverUrl ? (
+                      <img
+                        src={apiBook.coverUrl}
+                        alt={apiBook.title}
+                        className="w-16 h-24 object-cover rounded-md flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="w-16 h-24 bg-muted rounded-md flex items-center justify-center flex-shrink-0">
+                        <Book className="w-8 h-8 text-muted-foreground" />
+                      </div>
+                    )}
 
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-heading font-semibold truncate">{apiBook.title}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {apiBook.author}
-                    </p>
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge variant="secondary" className="text-xs">
-                        {apiBook.category}
-                      </Badge>
-                      <Badge 
-                        variant="outline" 
-                        className={cn(
-                          "text-xs",
-                          apiBook.status === "Finished" && "border-success text-success",
-                          apiBook.status === "Reading" && "border-accent text-accent"
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-heading font-semibold truncate">{apiBook.title}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {apiBook.author}
+                      </p>
+                      <div>
+                        {apiBook.reviews && apiBook.reviews.length > 0 ? (
+                          <StarRating rating={apiBook.reviews[apiBook.reviews.length - 1].rating} size="sm" />
+                        ) : (
+                          <StarRating rating={0} size="sm" interactive={false} />
                         )}
-                      >
-                        <StatusIcon className="w-3 h-3 mr-1" />
-                        {apiBook.status}
-                      </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 mt-2">
+                        <Badge variant="secondary" className="text-xs">
+                          {apiBook.category}
+                        </Badge>
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "text-xs",
+                            apiBook.status === "Finished" && "border-success text-success",
+                            apiBook.status === "Reading" && "border-accent text-accent"
+                          )}
+                        >
+                          <StatusIcon className="w-3 h-3 mr-1" />
+                          {apiBook.status}
+                        </Badge>
+                        <div className="hidden md:block text-xs">
+                          {apiBook.pagesRead} read pages.
+                        </div>
+                      </div>
                     </div>
+                  </div>
+
+                  {/* Buttons at the end of card */}
+                  <div className="flex  items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenAddToCollection(apiBook);
+                      }}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenDeleteDialog(apiBook);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                 </div>
               );
@@ -411,7 +564,7 @@ const LibraryPage = ({
                         }}
                         placeholder="Enter pages read"
                       />
-                      <p className="text-xs text-muted-foreground">
+                      <p className="  text-xs text-muted-foreground">
                         Maximum: {selectedBook.pages} pages
                       </p>
                     </div>
@@ -438,9 +591,10 @@ const LibraryPage = ({
 
                       try {
                         const baseURL = import.meta.env.VITE_API_BASE_URL || "";
+                        const previousPagesRead = selectedBook.pagesRead || 0;
                         
                         // Update pages read
-                        if (pagesRead !== (selectedBook.pagesRead || 0)) {
+                        if (pagesRead !== previousPagesRead) {
                           const pagesReadUrl = baseURL 
                             ? `${baseURL}/api/books/${selectedBook.id}/pages-read`
                             : `/api/books/${selectedBook.id}/pages-read`;
@@ -451,6 +605,36 @@ const LibraryPage = ({
                               "Content-Type": "application/json",
                             },
                             body: JSON.stringify({ pagesRead }),
+                          });
+                        }
+
+                        // Auto-update status: If book wasn't started (0 pages) and now has pages read, set to "Reading"
+                        if (previousPagesRead === 0 && pagesRead > 0 && selectedBook.status !== "Reading") {
+                          const statusUrl = baseURL
+                            ? `${baseURL}/api/books/${selectedBook.id}/status`
+                            : `/api/books/${selectedBook.id}/status`;
+                          
+                          await fetch(statusUrl, {
+                            method: "PUT",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({ status: "Reading" }),
+                          });
+                        }
+
+                        // Auto-update status: If all pages are read, set to "Finished"
+                        if (pagesRead === selectedBook.pages && selectedBook.pages > 0 && selectedBook.status !== "Finished") {
+                          const statusUrl = baseURL
+                            ? `${baseURL}/api/books/${selectedBook.id}/status`
+                            : `/api/books/${selectedBook.id}/status`;
+                          
+                          await fetch(statusUrl, {
+                            method: "PUT",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({ status: "Finished" }),
                           });
                         }
 
@@ -499,6 +683,97 @@ const LibraryPage = ({
           })()}
         </DialogContent>
       </Dialog>
+
+      {/* Add to Collection Modal */}
+      <Dialog open={isAddToCollectionOpen} onOpenChange={setIsAddToCollectionOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add to Collection</DialogTitle>
+          </DialogHeader>
+          {bookToAdd && (
+            <div className="space-y-4 py-4">
+              <div className="text-sm text-muted-foreground">
+                Select a collection to add "{bookToAdd.title}" to:
+              </div>
+              <ScrollArea className="max-h-[300px]">
+                <div className="space-y-2">
+                  {availableCollections.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No collections available. Create a collection first.
+                    </p>
+                  ) : (
+                    availableCollections.map((collection) => (
+                      <div
+                        key={collection.id}
+                        onClick={() => setSelectedCollectionId(collection.id)}
+                        className={cn(
+                          "flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors",
+                          selectedCollectionId === collection.id
+                            ? "bg-accent border-accent"
+                            : "hover:bg-secondary/50 border-border"
+                        )}
+                      >
+                        <span className="font-medium">{collection.name}</span>
+                        {selectedCollectionId === collection.id && (
+                          <div className="h-2 w-2 rounded-full bg-accent-foreground" />
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsAddToCollectionOpen(false);
+                setBookToAdd(null);
+                setSelectedCollectionId(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddToCollection}
+              disabled={!selectedCollectionId || availableCollections.length === 0}
+            >
+              Add
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Book Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Book</AlertDialogTitle>
+            <AlertDialogDescription>
+              {bookToDelete && (
+                <>
+                  Are you sure you want to delete "{bookToDelete.title}" by {bookToDelete.author}? This action cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setIsDeleteDialogOpen(false);
+              setBookToDelete(null);
+            }}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteBook}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
